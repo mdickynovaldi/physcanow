@@ -1,0 +1,69 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          String       @id @default(cuid())
+  name        String
+  email       String       @unique
+  password    String
+  role        Role         @default(STUDENT)
+  class       Class?       @relation(fields: [classId], references: [id])
+  classId     String?
+  createdQuiz Quiz[]       @relation("CreatedBy")
+  submissions Submission[]
+}
+
+model Class {
+  id       String @id @default(cuid())
+  name     String
+  students User[]
+  quizzes  Quiz[]
+}
+
+model Quiz {
+  id          String       @id @default(cuid())
+  title       String
+  questions   Question[]
+  createdBy   User         @relation("CreatedBy", fields: [teacherId], references: [id])
+  teacherId   String
+  class       Class        @relation(fields: [classId], references: [id])
+  classId     String
+  submissions Submission[]
+}
+
+model Question {
+  id      String   @id @default(cuid())
+  content String
+  options String[]
+  answer  String
+  quiz    Quiz     @relation(fields: [quizId], references: [id])
+  quizId  String
+}
+
+model Submission {
+  id          String   @id @default(cuid())
+  score       Int
+  student     User     @relation(fields: [studentId], references: [id])
+  studentId   String
+  quiz        Quiz     @relation(fields: [quizId], references: [id])
+  quizId      String
+  answers     String[]
+  submittedAt DateTime @default(now())
+}
+
+enum Role {
+  TEACHER
+  STUDENT
+}

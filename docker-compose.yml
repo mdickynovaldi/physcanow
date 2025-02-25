@@ -1,0 +1,30 @@
+version: "3.8"
+
+services:
+  # Layanan aplikasi Next.js
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: physcanow-app
+    ports:
+      - "3000:3000"
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/.next
+    environment:
+      - DATABASE_URL=postgresql://dickynovaldi:localpassword@db:5432/physcanow
+    depends_on:
+      - db
+    restart: unless-stopped
+
+  # Layanan database PostgreSQL
+  db:
+    image: postgres:alpine
+    container_name: physcanow-db
+    ports:
+      - "5432:5432"
+    env_file:
+      - path: .env
+        required: true
