@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Card,
   CardContent,
@@ -36,48 +36,86 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Pencil, Trash2 } from "lucide-react";
+import { Pencil, Trash2, Loader2 } from "lucide-react";
+import { useToast } from "@/components/ui/use-toast";
 
-// Data dummy untuk contoh
-const dummySiswa = [
-  {
-    id: "1",
-    name: "Budi Santoso",
-    email: "budi@example.com",
-    kelas: "Fisika Dasar",
-  },
-  {
-    id: "2",
-    name: "Ani Wijaya",
-    email: "ani@example.com",
-    kelas: "Fisika Dasar",
-  },
-  {
-    id: "3",
-    name: "Dedi Cahyono",
-    email: "dedi@example.com",
-    kelas: "Matematika Lanjut",
-  },
-];
+interface Student {
+  id: string;
+  name: string;
+  email: string;
+  kelas: string;
+  classId?: string;
+}
 
-// Data dummy kelas
-const dummyKelas = [
-  { id: "1", name: "Fisika Dasar" },
-  { id: "2", name: "Matematika Lanjut" },
-  { id: "3", name: "Kimia Organik" },
-];
+interface Class {
+  id: string;
+  name: string;
+  studentCount: number;
+}
 
 export function KelolaSiswa() {
-  const [siswa, setSiswa] = useState(dummySiswa);
+  const { toast } = useToast();
+  const [siswa, setSiswa] = useState<Student[]>([]);
+  const [classes, setClasses] = useState<Class[]>([]);
   const [formData, setFormData] = useState({
     id: "",
     name: "",
     email: "",
-    kelas: "",
+    classId: "",
     password: "",
   });
   const [isEditing, setIsEditing] = useState(false);
   const [openDialog, setOpenDialog] = useState(false);
+  const [studentToDelete, setStudentToDelete] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Mengambil data siswa dari API
+  const fetchStudents = async () => {
+    setIsLoading(true);
+    try {
+      const response = await fetch("/api/students");
+      if (!response.ok) {
+        throw new Error("Gagal mengambil data siswa");
+      }
+      const data = await response.json();
+      setSiswa(data);
+    } catch (error) {
+      console.error("Error fetching students:", error);
+      toast({
+        title: "Error",
+        description: "Gagal mengambil data siswa",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Mengambil data kelas dari API
+  const fetchClasses = async () => {
+    try {
+      const response = await fetch("/api/classes");
+      if (!response.ok) {
+        throw new Error("Gagal mengambil data kelas");
+      }
+      const data = await response.json();
+      setClasses(data);
+    } catch (error) {
+      console.error("Error fetching classes:", error);
+      toast({
+        title: "Error",
+        description: "Gagal mengambil data kelas",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Mengambil data saat komponen dimuat
+  useEffect(() => {
+    fetchStudents();
+    fetchClasses();
+  }, []);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -85,7 +123,10 @@ export function KelolaSiswa() {
   };
 
   const handleSelectChange = (value: string) => {
-    setFormData((prev) => ({ ...prev, kelas: value }));
+    setFormData((prev) => ({
+      ...prev,
+      classId: value === "none" ? "" : value,
+    }));
   };
 
   const resetForm = () => {
@@ -93,44 +134,144 @@ export function KelolaSiswa() {
       id: "",
       name: "",
       email: "",
-      kelas: "",
+      classId: "none",
       password: "",
     });
     setIsEditing(false);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsSubmitting(true);
 
-    if (isEditing) {
-      // Update siswa yang sudah ada
-      setSiswa(siswa.map((s) => (s.id === formData.id ? { ...formData } : s)));
-    } else {
-      // Tambah siswa baru
-      const newSiswa = {
-        ...formData,
-        id: Date.now().toString(),
-      };
-      setSiswa([...siswa, newSiswa]);
+    try {
+      if (isEditing) {
+        // Update siswa yang sudah ada
+        const response = await fetch(`/api/students/${formData.id}`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            name: formData.name,
+            email: formData.email,
+            password: formData.password || undefined, // Kirim password hanya jika diisi
+            classId:
+              formData.classId === "none" ? null : formData.classId || null,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || "Gagal memperbarui data siswa");
+        }
+
+        const updatedStudent = await response.json();
+
+        // Update state dengan siswa yang sudah diupdate
+        setSiswa(
+          siswa.map((s) => (s.id === updatedStudent.id ? updatedStudent : s))
+        );
+
+        toast({
+          title: "Berhasil",
+          description: "Data siswa berhasil diperbarui",
+        });
+      } else {
+        // Tambah siswa baru
+        const response = await fetch("/api/students", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            name: formData.name,
+            email: formData.email,
+            password: formData.password,
+            classId:
+              formData.classId === "none" ? null : formData.classId || null,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || "Gagal menambahkan siswa baru");
+        }
+
+        const newStudent = await response.json();
+
+        // Update state dengan siswa baru
+        setSiswa([...siswa, newStudent]);
+
+        toast({
+          title: "Berhasil",
+          description: "Siswa baru berhasil ditambahkan",
+        });
+      }
+
+      resetForm();
+    } catch (error: any) {
+      console.error("Error submitting form:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Terjadi kesalahan saat menyimpan data",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
     }
-
-    resetForm();
   };
 
   const handleEdit = (id: string) => {
     const siswaToEdit = siswa.find((s) => s.id === id);
     if (siswaToEdit) {
       setFormData({
-        ...siswaToEdit,
+        id: siswaToEdit.id,
+        name: siswaToEdit.name,
+        email: siswaToEdit.email,
+        classId: siswaToEdit.classId || "none",
         password: "", // Reset password saat edit
       });
       setIsEditing(true);
     }
   };
 
-  const handleDelete = (id: string) => {
-    setSiswa(siswa.filter((s) => s.id !== id));
-    setOpenDialog(false);
+  const openDeleteDialog = (id: string) => {
+    setStudentToDelete(id);
+    setOpenDialog(true);
+  };
+
+  const handleDelete = async () => {
+    if (!studentToDelete) return;
+
+    try {
+      const response = await fetch(`/api/students/${studentToDelete}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Gagal menghapus siswa");
+      }
+
+      // Update state dengan menghapus siswa
+      setSiswa(siswa.filter((s) => s.id !== studentToDelete));
+
+      toast({
+        title: "Berhasil",
+        description: "Siswa berhasil dihapus",
+      });
+    } catch (error: any) {
+      console.error("Error deleting student:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Terjadi kesalahan saat menghapus siswa",
+        variant: "destructive",
+      });
+    } finally {
+      setOpenDialog(false);
+      setStudentToDelete(null);
+    }
   };
 
   return (
@@ -157,6 +298,7 @@ export function KelolaSiswa() {
                   value={formData.name}
                   onChange={handleInputChange}
                   required
+                  disabled={isSubmitting}
                 />
               </div>
               <div className="space-y-2">
@@ -168,6 +310,7 @@ export function KelolaSiswa() {
                   value={formData.email}
                   onChange={handleInputChange}
                   required
+                  disabled={isSubmitting}
                 />
               </div>
               <div className="space-y-2">
@@ -181,20 +324,23 @@ export function KelolaSiswa() {
                   value={formData.password}
                   onChange={handleInputChange}
                   required={!isEditing}
+                  disabled={isSubmitting}
                 />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="kelas">Kelas</Label>
                 <Select
-                  value={formData.kelas}
+                  value={formData.classId || "none"}
                   onValueChange={handleSelectChange}
+                  disabled={isSubmitting}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Pilih kelas" />
                   </SelectTrigger>
                   <SelectContent>
-                    {dummyKelas.map((kelas) => (
-                      <SelectItem key={kelas.id} value={kelas.name}>
+                    <SelectItem value="none">Tidak ada kelas</SelectItem>
+                    {classes.map((kelas) => (
+                      <SelectItem key={kelas.id} value={kelas.id}>
                         {kelas.name}
                       </SelectItem>
                     ))}
@@ -204,10 +350,20 @@ export function KelolaSiswa() {
             </div>
           </CardContent>
           <CardFooter className="flex justify-between">
-            <Button type="button" variant="outline" onClick={resetForm}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={resetForm}
+              disabled={isSubmitting}
+            >
               {isEditing ? "Batal" : "Reset"}
             </Button>
-            <Button type="submit">{isEditing ? "Perbarui" : "Tambah"}</Button>
+            <Button type="submit" disabled={isSubmitting}>
+              {isSubmitting && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              {isEditing ? "Perbarui" : "Tambah"}
+            </Button>
           </CardFooter>
         </form>
       </Card>
@@ -229,7 +385,16 @@ export function KelolaSiswa() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {siswa.length > 0 ? (
+                {isLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-center py-6">
+                      <div className="flex justify-center items-center">
+                        <Loader2 className="h-6 w-6 animate-spin mr-2" />
+                        Memuat data...
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ) : siswa.length > 0 ? (
                   siswa.map((s) => (
                     <TableRow key={s.id}>
                       <TableCell className="font-medium">{s.name}</TableCell>
@@ -244,39 +409,13 @@ export function KelolaSiswa() {
                           >
                             <Pencil className="h-4 w-4" />
                           </Button>
-                          <Dialog
-                            open={openDialog}
-                            onOpenChange={setOpenDialog}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => openDeleteDialog(s.id)}
                           >
-                            <DialogTrigger asChild>
-                              <Button variant="ghost" size="icon">
-                                <Trash2 className="h-4 w-4 text-destructive" />
-                              </Button>
-                            </DialogTrigger>
-                            <DialogContent>
-                              <DialogHeader>
-                                <DialogTitle>Konfirmasi Hapus</DialogTitle>
-                                <DialogDescription>
-                                  Apakah Anda yakin ingin menghapus siswa ini?
-                                  Tindakan ini tidak dapat dibatalkan.
-                                </DialogDescription>
-                              </DialogHeader>
-                              <DialogFooter>
-                                <Button
-                                  variant="outline"
-                                  onClick={() => setOpenDialog(false)}
-                                >
-                                  Batal
-                                </Button>
-                                <Button
-                                  variant="destructive"
-                                  onClick={() => handleDelete(s.id)}
-                                >
-                                  Hapus
-                                </Button>
-                              </DialogFooter>
-                            </DialogContent>
-                          </Dialog>
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -293,6 +432,26 @@ export function KelolaSiswa() {
           </div>
         </CardContent>
       </Card>
+
+      <Dialog open={openDialog} onOpenChange={setOpenDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Konfirmasi Hapus</DialogTitle>
+            <DialogDescription>
+              Apakah Anda yakin ingin menghapus siswa ini? Tindakan ini tidak
+              dapat dibatalkan.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpenDialog(false)}>
+              Batal
+            </Button>
+            <Button variant="destructive" onClick={handleDelete}>
+              Hapus
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Card,
   CardContent,
@@ -18,53 +18,97 @@ import {
 } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search } from "lucide-react";
+import { Search, Loader2 } from "lucide-react";
+import { useToast } from "@/components/ui/use-toast";
 
-// Data dummy untuk contoh
-const dummySiswa = [
-  {
-    id: "1",
-    name: "Budi Santoso",
-    email: "budi@example.com",
-    kelas: "Fisika Dasar",
-  },
-  {
-    id: "2",
-    name: "Ani Wijaya",
-    email: "ani@example.com",
-    kelas: "Fisika Dasar",
-  },
-  {
-    id: "3",
-    name: "Dedi Cahyono",
-    email: "dedi@example.com",
-    kelas: "Matematika Lanjut",
-  },
-  {
-    id: "4",
-    name: "Eka Putri",
-    email: "eka@example.com",
-    kelas: "Kimia Organik",
-  },
-  {
-    id: "5",
-    name: "Fandi Ahmad",
-    email: "fandi@example.com",
-    kelas: "Fisika Dasar",
-  },
-];
+interface Student {
+  id: string;
+  name: string;
+  email: string;
+  kelas: string;
+}
 
 export function DaftarSiswa() {
+  const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
-  const [siswa, setSiswa] = useState(dummySiswa);
+  const [siswa, setSiswa] = useState<Student[]>([]);
+  const [filteredSiswa, setFilteredSiswa] = useState<Student[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Mengambil data siswa dari API
+  const fetchStudents = async () => {
+    setIsLoading(true);
+    try {
+      const response = await fetch("/api/students");
+      if (!response.ok) {
+        throw new Error("Gagal mengambil data siswa");
+      }
+      const data = await response.json();
+      setSiswa(data);
+      setFilteredSiswa(data);
+    } catch (error) {
+      console.error("Error fetching students:", error);
+      toast({
+        title: "Error",
+        description: "Gagal mengambil data siswa",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Mengambil data saat komponen dimuat
+  useEffect(() => {
+    fetchStudents();
+  }, []);
 
   // Filter siswa berdasarkan pencarian
-  const filteredSiswa = siswa.filter(
-    (s) =>
-      s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      s.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      s.kelas.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  useEffect(() => {
+    const filtered = siswa.filter(
+      (s) =>
+        s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        s.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        s.kelas.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+    setFilteredSiswa(filtered);
+  }, [searchTerm, siswa]);
+
+  // Fungsi untuk ekspor data ke CSV
+  const exportToCSV = () => {
+    if (filteredSiswa.length === 0) {
+      toast({
+        title: "Perhatian",
+        description: "Tidak ada data siswa untuk diekspor",
+      });
+      return;
+    }
+
+    // Header CSV
+    const csvHeader = ["Nama", "Email", "Kelas"].join(",");
+
+    // Baris data CSV
+    const csvRows = filteredSiswa.map((student) => {
+      return [
+        `"${student.name}"`,
+        `"${student.email}"`,
+        `"${student.kelas}"`,
+      ].join(",");
+    });
+
+    // Gabungkan header dan baris
+    const csvString = [csvHeader, ...csvRows].join("\n");
+
+    // Buat Blob dan link untuk download
+    const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", "daftar_siswa.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   return (
     <Card>
@@ -87,7 +131,7 @@ export function DaftarSiswa() {
             />
           </div>
           <Button variant="outline">Filter</Button>
-          <Button>Ekspor Data</Button>
+          <Button onClick={exportToCSV}>Ekspor Data</Button>
         </div>
 
         <div className="rounded-md border">
@@ -101,7 +145,16 @@ export function DaftarSiswa() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredSiswa.length > 0 ? (
+              {isLoading ? (
+                <TableRow>
+                  <TableCell colSpan={4} className="text-center py-6">
+                    <div className="flex justify-center items-center">
+                      <Loader2 className="h-6 w-6 animate-spin mr-2" />
+                      Memuat data...
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : filteredSiswa.length > 0 ? (
                 filteredSiswa.map((siswa) => (
                   <TableRow key={siswa.id}>
                     <TableCell className="font-medium">{siswa.name}</TableCell>
@@ -117,7 +170,9 @@ export function DaftarSiswa() {
               ) : (
                 <TableRow>
                   <TableCell colSpan={4} className="text-center py-6">
-                    Tidak ada siswa yang ditemukan
+                    {searchTerm
+                      ? "Tidak ada siswa yang ditemukan"
+                      : "Belum ada siswa yang ditambahkan"}
                   </TableCell>
                 </TableRow>
               )}
